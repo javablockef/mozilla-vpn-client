@@ -10,8 +10,11 @@
 #include "qmlengineholder.h"
 
 #include <QHostAddress>
+#include <QImage>
 #include <QQuickItem>
 #include <QQuickWindow>
+#include <QScreen>
+#include <QStandardPaths>
 #include <QWebSocket>
 #include <QTest>
 
@@ -162,6 +165,80 @@ static bool cmdForceUnsecuredNetwork(QWebSocket*, const QList<QByteArray>&) {
   return true;
 }
 
+bool cmdScreenCaptureWriteImage(QWebSocket* socket, const QImage& image,
+                                QStandardPaths::StandardLocation location) {
+  if (!QFileInfo::exists(QStandardPaths::writableLocation(location))) {
+    return false;
+  }
+
+  QString filename;
+  QDate now = QDate::currentDate();
+
+  QTextStream(&filename) << "mozillavpn-" << now.year() << "-" << now.month()
+                         << "-" << now.day() << ".png";
+
+  QDir dir(QStandardPaths::writableLocation(location));
+  QString file = dir.filePath(filename);
+
+  if (QFileInfo::exists(file)) {
+    logger.log() << file << "exists. Let's try a new filename";
+
+    for (uint32_t i = 1;; ++i) {
+      QString filename;
+      QTextStream(&filename)
+          << "mozillavpn-" << now.year() << "-" << now.month() << "-"
+          << now.day() << "_" << i << ".png";
+      file = dir.filePath(filename);
+      if (!QFileInfo::exists(file)) {
+        logger.log() << "Filename found!" << i;
+        break;
+      }
+    }
+  }
+
+  if (!image.save(file)) {
+    logger.log() << "Unable to save the pixmap in" << file;
+    return false;
+  }
+
+  socket->sendTextMessage(QString("-%1-").arg(file));
+  return true;
+}
+
+static bool cmdScreenCapture(QWebSocket* socket, const QList<QByteArray>&) {
+  QWindow* window = QmlEngineHolder::instance()->window();
+  QQuickWindow* quickWindow = qobject_cast<QQuickWindow*>(window);
+  if (!quickWindow) {
+    logger.log() << "Unable to identify the quick window";
+    return false;
+  }
+
+  QImage image = quickWindow->grabWindow();
+  if (!image.isNull() || image.width() == 0 || image.height() == 0) {
+    logger.log() << "Unable to grab the window";
+  }
+
+  logger.log() << "Generated image with width:" << image.width()
+               << "height:" << image.height();
+
+  if (cmdScreenCaptureWriteImage(socket, image,
+                                 QStandardPaths::DesktopLocation)) {
+    return true;
+  }
+
+  if (cmdScreenCaptureWriteImage(socket, image, QStandardPaths::HomeLocation)) {
+    return true;
+  }
+
+  if (cmdScreenCaptureWriteImage(socket, image, QStandardPaths::TempLocation)) {
+    return true;
+  }
+
+  logger.log()
+      << "Unable to write the image: no desktop, no home no temp folder.";
+  return false;
+}
+
 struct WebSocketCommand {
   QString m_commandName;
   int32_t m_arguments;
@@ -185,6 +262,7 @@ static QList<WebSocketCommand> s_commands{
     WebSocketCommand{"activate", 0, cmdActivate},
     WebSocketCommand{"deactivate", 0, cmdDeactivate},
     WebSocketCommand{"logout", 0, cmdLogout},
+    WebSocketCommand{"screen_capture", 0, cmdScreenCapture},
 };
 
 InspectorWebSocketConnection::InspectorWebSocketConnection(

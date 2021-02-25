@@ -8,7 +8,9 @@
 #include "mozillavpn.h"
 #include "qmlengineholder.h"
 
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QHostAddress>
 #include <QTcpSocket>
 
@@ -80,6 +82,43 @@ void InspectorHttpConnection::readData() {
   }
 }
 
+bool InspectorHttpConnection::processScreenCapture(
+    const QString& path, QStandardPaths::StandardLocation location) {
+  if (!QFileInfo::exists(QStandardPaths::writableLocation(location))) {
+    return false;
+  }
+
+  QDir dir(QStandardPaths::writableLocation(location));
+  QString fileName = dir.filePath(path);
+
+  if (!QFileInfo::exists(fileName)) {
+    return false;
+  }
+
+  QFile file(fileName);
+
+  if (!file.open(QIODevice::ReadOnly)) {
+    logger.log() << "Unable to read file" << fileName;
+    return false;
+  }
+
+  QByteArray content = file.readAll();
+
+  QByteArray response;
+  {
+    QTextStream out(&response);
+    out << "HTTP/1.1 200 OK\n";
+    out << "Content-Type: image/png\n";
+    out << "Content-Length: " << content.length() << "\n";
+    out << "Server: mozillavpn\n\n";
+  }
+
+  m_connection->write(response);
+  m_connection->write(content);
+  m_connection->close();
+  return true;
+}
+
 void InspectorHttpConnection::processHeaders() {
   logger.log() << "process headers:" << m_headers;
 
@@ -112,12 +151,32 @@ void InspectorHttpConnection::processHeaders() {
         QTextStream out(&response);
         out << "HTTP/1.1 200 OK\n";
         out << "Content-Type: " << p.m_mime << "\n";
+        out << "Content-Length: " << content.length() << "\n";
         out << "Server: mozillavpn\n\n";
-        out << content;
       }
 
       m_connection->write(response);
+      m_connection->write(content);
       m_connection->close();
+      return;
+    }
+  }
+
+  // Special requests for the screen capture files
+  logger.log() << "PATH:" << path;
+  if (path.startsWith("/screenCapture/") && !path.contains("..") &&
+      path.endsWith(".png")) {
+    path.remove(0, 15);
+
+    if (processScreenCapture(path, QStandardPaths::DesktopLocation)) {
+      return;
+    }
+
+    if (processScreenCapture(path, QStandardPaths::HomeLocation)) {
+      return;
+    }
+
+    if (processScreenCapture(path, QStandardPaths::TempLocation)) {
       return;
     }
   }

@@ -7,6 +7,7 @@
 
 #include <QByteArray>
 #include <QObject>
+#include <QStandardPaths>
 
 class QTcpSocket;
 
@@ -22,6 +23,8 @@ class InspectorHttpConnection final : public QObject {
   void readData();
 
   void processHeaders();
+  bool processScreenCapture(const QString& path,
+                            QStandardPaths::StandardLocation location);
 
  private:
   QTcpSocket* m_connection;

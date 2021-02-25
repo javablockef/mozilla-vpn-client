@@ -31,6 +31,13 @@
         <div id="log"></div>
       </div>
 
+      <div id="image-container" class="log-wrapper draggable" data-draggable-id="2" hidden>
+        <div class="draggable-header">
+          <svg class="draggable-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0V0z"/><path class="fill-path" fill="#000000" d="M11 18c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-2-8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 4c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></svg>
+        </div>
+        <img id="img" style="padding: 1em" height="600" />
+      </div>
+
     </main>
 
     <footer class="websocket-footer">
@@ -87,7 +94,21 @@
         ws.onopen = () => { t("Connected!"); resolve(); }
         ws.onerror = () => { t("Connection failed"); }
         ws.onclose = () => { t("Disconnected"); }
-        ws.onmessage = data => { if (data.data[0] == "!") tl(data.data); else t(data.data); }
+        ws.onmessage = data => {
+          const msg = data.data;
+
+          if (msg[0] == "!") {
+            tl(msg);
+            return;
+          }
+
+          if (msg[0] == '-' && msg.endsWith(".png-")) {
+            document.getElementById("img").src = "/screenCapture" + msg.substring(msg.lastIndexOf("/"), msg.length - 1);
+           document.getElementById("image-container").style.display = "block";
+          }
+
+          t(msg);
+        }
       });
     }
 
@@ -103,6 +124,7 @@
     commands.set("detectCaptivePortal", { func: () => ws.send("force_captive_portal_check"), desc: "Starts the captive portal detection" });
     commands.set("triggerCaptivePortal", { func: () => ws.send("force_captive_portal_detection"), desc: "Triggers the captive portal detection" });
     commands.set("triggerUnsecuredNetwork", { func: () => ws.send("force_unsecured_network"), desc: "Triggers the unsecured network detection" });
+    commands.set("screenCapture", { func: () => ws.send("screen_capture"), desc: "Screen capture" });
 
     function parseCommand(input) {
       input = input.trim();
